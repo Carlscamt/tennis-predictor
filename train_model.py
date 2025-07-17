@@ -120,58 +120,62 @@ def backtest_model(data_path, train_year_end, test_year_start):
     print(classification_report(y_test, y_pred))
 
 def train_and_save_model():
-    print("Loading feature data...")
-    
-    # Load the raw data first to process all years
-    raw_data_path = 'tennis_data/tennis_data.csv'
-    try:
-        original_df = pd.read_csv(raw_data_path, low_memory=False)
-        print("Processing full historical dataset...")
-        from feature_engineering_optimized import calculate_features
-        data = calculate_features(original_df)
-    except FileNotFoundError:
-        print("Using pre-processed feature data...")
-        data = pd.read_csv('tennis_data_features.csv')
-    
+    """Trains and saves an XGBoost model on the tennis data."""
+    print("Loading data...")
+    data = pd.read_csv('tennis_data_features.csv', low_memory=False)
     data['Date'] = pd.to_datetime(data['Date'])
-    print(f"Dataset spans from {data['Date'].min()} to {data['Date'].max()}")
-    print(f"Total matches: {len(data)//2}")  # Divide by 2 as each match appears twice
-    
-    # Sort by date for time series split
-    data = data.sort_values('Date')
-    
-    # Prepare features and target
-    features = ['Elo_diff',
-                'career_win_percentage_diff', 
-                'career_surface_win_percentage_diff',
-                'h2h_win_percentage_diff',
-                'rolling_form_diff',
-                'Surface']
+    data.fillna(0, inplace=True)
+    data.sort_values(by='Date', inplace=True)
+
+    features = [
+        # Base features
+        'Elo_diff',
+        'Surface',
+        'career_win_percentage_diff',
+        'career_surface_win_percentage_diff',
+        'h2h_win_percentage_diff',
+        'rolling_form_diff',
+        'Momentum_diff',
+        'Experience_diff',
+        'Surface_Experience_diff',
+        'Surface_Form_diff',
+        'Weighted_Form_diff',
+        'Tournament_Level',
+        'Ranking_Diff',
+        # New features
+        'Round_Progress',
+        'Best_of_Performance_diff',
+        'Court_Performance_diff',
+        'Score_Dominance',
+        'Points_Ratio',
+        'Dominance_diff'
+    ]
     
     # Encode surface categorical variable
     le = LabelEncoder()
     data['Surface'] = le.fit_transform(data['Surface'])
     
+    print("Preparing features...")
     X = data[features]
     y = data['Win']
     
     # Use TimeSeriesSplit for proper temporal validation
     tscv = TimeSeriesSplit(n_splits=5)
     
-    # Initialize model with optimized parameters
+    # Initialize model with optimized parameters for expanded feature set
     model = xgb.XGBClassifier(
-        n_estimators=300,
-        learning_rate=0.05,
-        max_depth=5,
-        min_child_weight=2,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        gamma=0.1,
+        n_estimators=500,  # Increased for more complex feature interactions
+        learning_rate=0.03,  # Reduced to prevent overfitting with more features
+        max_depth=6,  # Slightly increased to capture more complex patterns
+        min_child_weight=3,  # Increased to prevent overfitting
+        subsample=0.85,
+        colsample_bytree=0.85,  # Adjusted for more features
+        gamma=0.2,  # Increased to encourage more conservative tree splitting
         random_state=42,
         use_label_encoder=False,
         eval_metric='logloss'
     )
-    
+
     print("\nTraining model with time series cross-validation...")
     accuracies = []
     
@@ -187,8 +191,13 @@ def train_and_save_model():
         print(f"Training period: {train_dates.min()} to {train_dates.max()}")
         print(f"Testing period: {test_dates.min()} to {test_dates.max()}")
         
-        # Train the model without early stopping
-        model.fit(X_train, y_train)
+        # Train the model
+        model.fit(
+            X_train, 
+            y_train,
+            eval_set=[(X_test, y_test)],
+            verbose=True
+        )
         
         accuracy = model.score(X_test, y_test)
         accuracies.append(accuracy)
@@ -201,21 +210,25 @@ def train_and_save_model():
     print("\nTraining final model on all data...")
     model.fit(X, y)
     
-    # Feature importance
+    # Feature importance analysis
     importance = pd.DataFrame({
         'feature': features,
         'importance': model.feature_importances_
     }).sort_values('importance', ascending=False)
     
     print("\nFeature Importance:")
-    for _, row in importance.iterrows():
-        print(f"{row['feature']}: {row['importance']:.4f}")
+    print("------------------")
+    for _, row in importance.head(10).iterrows():
+        print(f"{row['feature']:<30} {row['importance']:.4f}")
     
     print("\nSaving model...")
     # Save the model and label encoder
-    joblib.dump(model, 'tennis_model.joblib')
+    joblib.dump(model, 'tennis_model_with_new_features.joblib')
     joblib.dump(le, 'surface_encoder.joblib')
-    print("Model saved successfully!")
+    
+    # Save feature importance for future reference
+    importance.to_csv('feature_importance.csv', index=False)
+    print("Model and feature importance saved successfully!")
 
 if __name__ == '__main__':
     train_and_save_model()
