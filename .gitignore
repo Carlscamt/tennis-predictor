@@ -11,19 +11,30 @@ build/
 # Virtual environment
 venv/
 env/
+.env/
 
 # IDE
 .vscode/
 .idea/
 
-# Data files that should not be versioned (if they're large or frequently changing)
+# Project-specific data files
 *.csv
 tennis_data/*.xls
 tennis_data/*.xlsx
-
-# Model files
-*.pkl
-*.h5
+*.joblib
+!surface_encoder.joblib
+!tennis_model_fixed.joblib
 
 # Jupyter Notebook
 .ipynb_checkpoints/
+
+# Local development
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+*.log
+logs/
