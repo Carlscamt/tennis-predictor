@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual environment
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Data files that should not be versioned (if they're large or frequently changing)
+*.csv
+tennis_data/*.xls
+tennis_data/*.xlsx
+
+# Model files
+*.pkl
+*.h5
+
+# Jupyter Notebook
+.ipynb_checkpoints/
