@@ -356,6 +356,82 @@ def calculate_features(original_df):
     # Calculate the difference
     dyadic_df['Surface_Form_diff'] = dyadic_df['Player_Surface_Form'] - dyadic_df['Opponent_Surface_Form']
     
+    # Calculate Round Progress feature
+    round_order = {
+        'R128': 1, 'R64': 2, 'R32': 3, 'R16': 4, 'QF': 5, 'SF': 6, 'F': 7
+    }
+    dyadic_df['Round_Progress'] = dyadic_df['Round'].map(round_order).fillna(0)
+    
+    # Calculate Match Format Performance
+    dyadic_df['Player_Best_of_Win_Rate'] = (
+        dyadic_df.sort_values('Date')
+        .groupby(['Player', 'Best of'])['Win']
+        .transform(lambda x: x.expanding().mean())
+        .fillna(0.5)
+    )
+    dyadic_df['Opponent_Best_of_Win_Rate'] = (
+        dyadic_df.sort_values('Date')
+        .groupby(['Opponent', 'Best of'])['Win']
+        .transform(lambda x: x.expanding().mean())
+        .fillna(0.5)
+    )
+    dyadic_df['Best_of_Performance_diff'] = (
+        dyadic_df['Player_Best_of_Win_Rate'] - dyadic_df['Opponent_Best_of_Win_Rate']
+    )
+    
+    # Calculate Indoor/Outdoor Performance
+    dyadic_df['Court_Type'] = dyadic_df['Court'].map({'Indoor': 1, 'Outdoor': 0}).fillna(0.5)
+    dyadic_df['Player_Court_Win_Rate'] = (
+        dyadic_df.sort_values('Date')
+        .groupby(['Player', 'Court'])['Win']
+        .transform(lambda x: x.expanding().mean())
+        .fillna(0.5)
+    )
+    dyadic_df['Opponent_Court_Win_Rate'] = (
+        dyadic_df.sort_values('Date')
+        .groupby(['Opponent', 'Court'])['Win']
+        .transform(lambda x: x.expanding().mean())
+        .fillna(0.5)
+    )
+    dyadic_df['Court_Performance_diff'] = (
+        dyadic_df['Player_Court_Win_Rate'] - dyadic_df['Opponent_Court_Win_Rate']
+    )
+    
+    # Calculate Score Dominance
+    set_columns = ['W1', 'W2', 'W3', 'W4', 'W5', 'L1', 'L2', 'L3', 'L4', 'L5']
+    for col in set_columns:
+        dyadic_df[col] = pd.to_numeric(dyadic_df[col], errors='coerce')
+    
+    # Calculate average set score difference for completed sets
+    dyadic_df['Score_Dominance'] = 0
+    for i in range(1, 6):
+        set_diff = dyadic_df[f'W{i}'] - dyadic_df[f'L{i}']
+        # Only consider completed sets (where either player scored points)
+        completed_sets = (dyadic_df[f'W{i}'].notna() & dyadic_df[f'L{i}'].notna())
+        dyadic_df.loc[completed_sets, 'Score_Dominance'] += set_diff
+    
+    # Normalize by number of sets played
+    sets_played = dyadic_df[set_columns].notna().sum(axis=1) / 2
+    dyadic_df['Score_Dominance'] = dyadic_df['Score_Dominance'] / sets_played.replace(0, 1)
+    
+    # Points-based features (using ranking points)
+    dyadic_df['Points_Ratio'] = np.log1p(dyadic_df['WPts']) - np.log1p(dyadic_df['LPts'])
+    
+    # Calculate rolling average of Score_Dominance
+    dyadic_df['Player_Avg_Dominance'] = (
+        dyadic_df.sort_values('Date')
+        .groupby('Player')['Score_Dominance']
+        .transform(lambda x: x.rolling(10, min_periods=1).mean())
+        .fillna(0)
+    )
+    dyadic_df['Opponent_Avg_Dominance'] = (
+        dyadic_df.sort_values('Date')
+        .groupby('Opponent')['Score_Dominance']
+        .transform(lambda x: x.rolling(10, min_periods=1).mean())
+        .fillna(0)
+    )
+    dyadic_df['Dominance_diff'] = dyadic_df['Player_Avg_Dominance'] - dyadic_df['Opponent_Avg_Dominance']
+
     final_features = [
         'Date', 'Player', 'Opponent', 'Win', 'Surface',
         'Elo_diff',                           # Base Elo difference
@@ -369,7 +445,14 @@ def calculate_features(original_df):
         'Surface_Form_diff',                 # Recent surface performance
         'Weighted_Form_diff',                # Exponentially weighted form
         'Tournament_Level',                  # Tournament importance
-        'Ranking_Diff'                       # Ranking difference (log)
+        'Ranking_Diff',                      # Ranking difference (log)
+        'Round_Progress',                    # Tournament round progression
+        'Best_of_Performance_diff',          # Performance in different match formats
+        'Court_Performance_diff',            # Indoor/Outdoor performance difference
+        'Location',                          # Tournament location
+        'Score_Dominance',                   # Average set score difference
+        'Points_Ratio',                      # Log ratio of ranking points
+        'Dominance_diff'                     # Difference in average score dominance
     ]
     
     # Keep betting odds if available
